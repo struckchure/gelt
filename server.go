@@ -2,8 +2,11 @@ package gelt
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+	"github.com/samber/lo"
 )
 
 type Action[T, R any] func(c any) (R, error)
@@ -36,6 +39,8 @@ func (s *Server) Start(port ...int) error {
 
 func NewServer(pageRegistry map[string]any) *Server {
 	srv := echo.New()
+
+	srv.Use(middleware.Static(JoinURL(lo.Must(os.Getwd()), "public")))
 
 	router := NewRouter(pageRegistry)
 
