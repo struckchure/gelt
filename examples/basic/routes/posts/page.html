@@ -1,0 +1,8 @@
+<h2>Posts</h2>
+{{ range $post := .Posts }}
+<span>{{ $post }}</span>
+{{ end }}
+
+<br />
+
+<span>Page: {{ .Page }}</span>
