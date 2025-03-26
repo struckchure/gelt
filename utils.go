@@ -1,6 +1,7 @@
 package gelt
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -9,6 +10,7 @@ import (
 	"go/token"
 	"os"
 	"path"
+	"path/filepath"
 	"reflect"
 	"strings"
 )
@@ -110,4 +112,28 @@ func JoinURL(base string, parts ...string) string {
 	}
 
 	return fullPath
+}
+
+func GetGoModuleName(dir string) (string, error) {
+	goModPath := filepath.Join(dir, "go.mod")
+
+	file, err := os.Open(goModPath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module ")), nil
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+
+	return "", fmt.Errorf("module name not found in go.mod")
 }
