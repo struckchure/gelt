@@ -3,9 +3,12 @@ package gelt
 import (
 	"fmt"
 	"html/template"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -23,6 +26,48 @@ type Route struct {
 	Path     string
 	Script   string
 	Template string
+	Weight   int
+}
+
+// ComputeWeight calculates the weight of a route
+func ComputeWeight(path string) int {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	n := len(segments)
+	weight := 0
+	hasParamInFirstSegment := strings.HasPrefix(segments[0], ":")
+
+	for i, segment := range segments {
+		if strings.HasPrefix(segment, ":") { // It's a parameter
+			weight += (n - i) * 10 // Increase weight for params appearing earlier
+		}
+	}
+
+	// If first segment is a param, reduce priority
+	if hasParamInFirstSegment {
+		weight -= 50
+	}
+
+	return weight
+}
+
+// SortRoutes sorts routes based on their weight
+func SortRoutes(routes []Route) {
+	for i := range routes {
+		routes[i].Weight = ComputeWeight(routes[i].Path)
+	}
+
+	sort.SliceStable(routes, func(i, j int) bool {
+		// Static routes (weight = 0) always come first
+		if routes[i].Weight == 0 && routes[j].Weight > 0 {
+			return true
+		}
+		if routes[j].Weight == 0 && routes[i].Weight > 0 {
+			return false
+		}
+
+		// Non-static routes sorted from highest to lowest weight
+		return routes[i].Weight > routes[j].Weight
+	})
 }
 
 func (r *Router) scanPages(root string) error {
@@ -84,6 +129,7 @@ func (r *Router) scanPages(root string) error {
 			route.Params = paramNames
 
 			r.routes = append(r.routes, route)
+			SortRoutes(r.routes)
 		}
 
 		return nil
@@ -135,7 +181,12 @@ func (r *Router) executeRoute(ctx echo.Context, route Route) (*string, error) {
 	}
 
 	// Parse and execute the template with the loaded data
-	tmpl, err := template.New(filepath.Base(route.Template)).ParseFiles(route.Template)
+	tmpl, err := template.
+		New(filepath.Base(route.Template)).
+		Funcs(template.FuncMap{
+			"json": ToJSON,
+		}).
+		ParseFiles(route.Template)
 	if err != nil {
 		return nil, err
 	}
@@ -211,8 +262,47 @@ func (r *Router) Register(srv *echo.Echo) error {
 		return err
 	}
 
-	srv.GET("*", r.HandleGet)
-	srv.POST("*", r.HandlePost)
+	handler := func(c echo.Context, route Route) error {
+		content, err := r.executeRoute(c, route)
+		if err != nil {
+			log.Fatalln(err)
+			return c.HTML(500, fmt.Sprintf("<p>%s</p>", err.Error()))
+		}
+
+		return c.HTML(200, *content)
+	}
+	rootHandler := func(c echo.Context) error {
+		content, err := r.executeRoute(c, Route{
+			Path:     "/",
+			Template: "public/index.html",
+		})
+		if err != nil {
+			log.Fatalln(err)
+			return c.HTML(500, fmt.Sprintf("<p>%s</p>", err.Error()))
+		}
+
+		return c.HTML(200, *content)
+	}
+
+	srv.GET("/", rootHandler)
+	srv.POST("/", rootHandler)
+
+	for _, route := range r.routes {
+		_handler := func(c echo.Context) error { return handler(c, route) }
+		srv.Group("_").GET(route.Path, _handler)
+		srv.Group("_").POST(route.Path, _handler)
+	}
+
+	srv.HTTPErrorHandler = func(err error, c echo.Context) {
+		if he, ok := err.(*echo.HTTPError); ok {
+			if he.Code == http.StatusNotFound {
+				c.Redirect(http.StatusMovedPermanently, "/")
+				return
+			}
+		}
+		// Default error handler
+		srv.DefaultHTTPErrorHandler(err, c)
+	}
 
 	return nil
 }
