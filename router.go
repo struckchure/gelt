@@ -13,11 +13,13 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/samber/lo"
+	"golang.org/x/net/websocket"
 )
 
 type Router struct {
 	routes       []Route
 	pageRegistry map[string]any
+	eventBus     *EventBus
 }
 
 type Route struct {
@@ -136,19 +138,6 @@ func (r *Router) scanPages(root string) error {
 	})
 }
 
-func (r *Router) matchRoute(path string) (bool, Route, map[string]string) {
-	for _, route := range r.routes {
-		if matches := route.Pattern.FindStringSubmatch(path); matches != nil {
-			params := make(map[string]string)
-			for i, name := range route.Params {
-				params[name] = matches[i+1]
-			}
-			return true, route, params
-		}
-	}
-	return false, Route{}, nil
-}
-
 func (r *Router) executeRoute(ctx echo.Context, route Route) (*string, error) {
 	var data any
 	var loadFn func(echo.Context) (any, error) = nil
@@ -241,26 +230,6 @@ func (r *Router) formatPath(path string) string {
 	return path
 }
 
-func (r *Router) HandleGet(c echo.Context) error {
-	path := r.formatPath(c.Request().URL.Path)
-
-	found, route, _ := r.matchRoute(path)
-	if !found {
-		return c.HTML(404, "<p>Not found</p>")
-	}
-
-	content, err := r.executeRoute(c, route)
-	if err != nil {
-		return c.HTML(500, fmt.Sprintf("<p>%s</p>", err.Error()))
-	}
-
-	return c.HTML(200, *content)
-}
-
-func (r *Router) HandlePost(c echo.Context) error {
-	return nil
-}
-
 func (r *Router) Register(srv *echo.Echo) error {
 	err := r.scanPages("./routes")
 	if err != nil {
@@ -276,6 +245,46 @@ func (r *Router) Register(srv *echo.Echo) error {
 
 		return c.HTML(200, *content)
 	}
+
+	wsHandler := func(c echo.Context) error {
+		websocket.Handler(func(ws *websocket.Conn) {
+			defer ws.Close()
+			eventChan := r.eventBus.Subscribe("file_changed")
+
+			// Handle sending events
+			done := make(chan struct{})
+			go func() {
+				for {
+					select {
+					case _, ok := <-eventChan:
+						if !ok {
+							return // Channel closed, exit goroutine
+						}
+						err := websocket.Message.Send(ws, "reload")
+						if err != nil {
+							log.Println("WebSocket Send Error:", err)
+							close(done) // Signal to close
+							return
+						}
+						log.Println("Reloading web page...")
+					case <-done:
+						return
+					}
+				}
+			}()
+
+			// Block until WebSocket closes
+			buf := make([]byte, 1)
+			_, err := ws.Read(buf)
+			close(done) // Ensure goroutine exits
+			if err != nil {
+				log.Println("WebSocket Read Error:", err)
+			}
+		}).ServeHTTP(c.Response(), c.Request())
+
+		return nil
+	}
+
 	rootHandler := func(c echo.Context) error {
 		content, err := r.executeRoute(c, Route{
 			Path:     "/",
@@ -291,6 +300,8 @@ func (r *Router) Register(srv *echo.Echo) error {
 
 	srv.GET("/", rootHandler)
 	srv.POST("/", rootHandler)
+
+	srv.GET("/_/ws/", wsHandler)
 
 	for _, route := range r.routes {
 		_handler := func(c echo.Context) error { return handler(c, route) }
@@ -312,9 +323,10 @@ func (r *Router) Register(srv *echo.Echo) error {
 	return nil
 }
 
-func NewRouter(pageRegistry map[string]any) *Router {
+func NewRouter(pageRegistry map[string]any, eventBus *EventBus) *Router {
 	return &Router{
 		routes:       []Route{},
 		pageRegistry: pageRegistry,
+		eventBus:     eventBus,
 	}
 }

@@ -35,6 +35,12 @@ document.addEventListener("alpine:init", () => {
         const page = event.state?.page || "";
         await this.loadContent(page);
       });
+
+      const ws = new WebSocket("/_/ws/");
+      ws.onmessage = async (event) => {
+        const url = window.location.href.replace(window.location.origin, "");
+        await this.loadContent(url);
+      };
     },
   }));
 });

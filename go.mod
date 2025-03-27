@@ -11,6 +11,7 @@ require (
 	github.com/samber/lo v1.49.1
 	github.com/siongui/godom v0.0.0-20200920152407-31a6de96fdf6
 	github.com/spf13/cobra v1.2.1
+	golang.org/x/net v0.33.0
 )
 
 require (
@@ -25,7 +26,6 @@ require (
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	github.com/valyala/fasttemplate v1.2.2 // indirect
 	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/term v0.27.0 // indirect
 	golang.org/x/text v0.21.0 // indirect

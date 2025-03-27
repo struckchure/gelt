@@ -1,13 +1,17 @@
 package index
 
+import "github.com/labstack/echo/v4"
+
 type Page struct{}
 
-func say_hi() {
-	// dom.Alert("Hi")
+type payload struct {
+	Title  string
+	Stacks []string
 }
 
-func (Page) Methods() map[string]any {
-	return map[string]any{
-		"say_hi": say_hi,
-	}
+func (Page) Load(c echo.Context) (any, error) {
+	return &payload{
+		Title:  "Gelt is amazing!",
+		Stacks: []string{"Golang", "HTML", "CSS", "AlpineJS"},
+	}, nil
 }
