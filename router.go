@@ -185,6 +185,11 @@ func (r *Router) executeRoute(ctx echo.Context, route Route) (*string, error) {
 		New(filepath.Base(route.Template)).
 		Funcs(template.FuncMap{
 			"json": ToJSON,
+			"sub":  func(a, b int) int { return a - b },
+			"add":  func(a, b int) int { return a + b },
+			"div":  func(a, b int) int { return a / b },
+			"mul":  func(a, b int) int { return a * b },
+			"mod":  func(a, b int) int { return a % b },
 		}).
 		ParseFiles(route.Template)
 	if err != nil {
@@ -265,7 +270,7 @@ func (r *Router) Register(srv *echo.Echo) error {
 	handler := func(c echo.Context, route Route) error {
 		content, err := r.executeRoute(c, route)
 		if err != nil {
-			log.Fatalln(err)
+			log.Println(err)
 			return c.HTML(500, fmt.Sprintf("<p>%s</p>", err.Error()))
 		}
 
@@ -277,7 +282,7 @@ func (r *Router) Register(srv *echo.Echo) error {
 			Template: "public/index.html",
 		})
 		if err != nil {
-			log.Fatalln(err)
+			log.Println(err)
 			return c.HTML(500, fmt.Sprintf("<p>%s</p>", err.Error()))
 		}
 
