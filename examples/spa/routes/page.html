@@ -1,0 +1,30 @@
+<!-- <p>
+  Lorem ipsum dolor, sit amet consectetur adipisicing elit. Nam iusto iure eum
+  vel mollitia quidem modi deleniti ipsum. Sunt, voluptatibus. Labore temporibus
+  eius repellat assumenda perferendis, eum molestias culpa molestiae.
+</p>
+
+<a href="/posts">Posts</a>
+<a href="/posts/posad">Post Details</a>
+<a href="/posts/create">Post Create</a>
+<a href="/posts/posad/analytics">Post Analytics</a>
+<a href="/@struckchure">@struckchure</a>
+<a href="/profile">Profile</a> -->
+
+<h4>{{ .Title }}</h4>
+
+<pre
+  x-data="{ stacks: {{ json .Stacks }}, isLast(idx) { return idx === {{ json .Stacks }}.length - 1 } }"
+>
+  Gelt := []string{<template x-for="(stack, idx) in stacks">
+    <span x-text="stack +  (isLast(idx) ? '' : ', ')"></span>
+  </template>}
+</pre>
+
+<img src="/images/logo.png" />
+
+<button
+  x-data="{ count: 0 }"
+  @click="count++"
+  x-text="'Count : ' + count"
+></button>

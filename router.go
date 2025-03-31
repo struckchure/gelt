@@ -3,18 +3,23 @@ package gelt
 import (
 	"fmt"
 	"html/template"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/labstack/echo/v4"
 	"github.com/samber/lo"
+	"golang.org/x/net/websocket"
 )
 
 type Router struct {
 	routes       []Route
 	pageRegistry map[string]any
+	eventBus     *EventBus
 }
 
 type Route struct {
@@ -23,6 +28,48 @@ type Route struct {
 	Path     string
 	Script   string
 	Template string
+	Weight   int
+}
+
+// ComputeWeight calculates the weight of a route
+func ComputeWeight(path string) int {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	n := len(segments)
+	weight := 0
+	hasParamInFirstSegment := strings.HasPrefix(segments[0], ":")
+
+	for i, segment := range segments {
+		if strings.HasPrefix(segment, ":") { // It's a parameter
+			weight += (n - i) * 10 // Increase weight for params appearing earlier
+		}
+	}
+
+	// If first segment is a param, reduce priority
+	if hasParamInFirstSegment {
+		weight -= 50
+	}
+
+	return weight
+}
+
+// SortRoutes sorts routes based on their weight
+func SortRoutes(routes []Route) {
+	for i := range routes {
+		routes[i].Weight = ComputeWeight(routes[i].Path)
+	}
+
+	sort.SliceStable(routes, func(i, j int) bool {
+		// Static routes (weight = 0) always come first
+		if routes[i].Weight == 0 && routes[j].Weight > 0 {
+			return true
+		}
+		if routes[j].Weight == 0 && routes[i].Weight > 0 {
+			return false
+		}
+
+		// Non-static routes sorted from highest to lowest weight
+		return routes[i].Weight > routes[j].Weight
+	})
 }
 
 func (r *Router) scanPages(root string) error {
@@ -84,23 +131,11 @@ func (r *Router) scanPages(root string) error {
 			route.Params = paramNames
 
 			r.routes = append(r.routes, route)
+			SortRoutes(r.routes)
 		}
 
 		return nil
 	})
-}
-
-func (r *Router) matchRoute(path string) (bool, Route, map[string]string) {
-	for _, route := range r.routes {
-		if matches := route.Pattern.FindStringSubmatch(path); matches != nil {
-			params := make(map[string]string)
-			for i, name := range route.Params {
-				params[name] = matches[i+1]
-			}
-			return true, route, params
-		}
-	}
-	return false, Route{}, nil
 }
 
 func (r *Router) executeRoute(ctx echo.Context, route Route) (*string, error) {
@@ -135,7 +170,17 @@ func (r *Router) executeRoute(ctx echo.Context, route Route) (*string, error) {
 	}
 
 	// Parse and execute the template with the loaded data
-	tmpl, err := template.New(filepath.Base(route.Template)).ParseFiles(route.Template)
+	tmpl, err := template.
+		New(filepath.Base(route.Template)).
+		Funcs(template.FuncMap{
+			"json": ToJSON,
+			"sub":  func(a, b int) int { return a - b },
+			"add":  func(a, b int) int { return a + b },
+			"div":  func(a, b int) int { return a / b },
+			"mul":  func(a, b int) int { return a * b },
+			"mod":  func(a, b int) int { return a % b },
+		}).
+		ParseFiles(route.Template)
 	if err != nil {
 		return nil, err
 	}
@@ -185,41 +230,103 @@ func (r *Router) formatPath(path string) string {
 	return path
 }
 
-func (r *Router) HandleGet(c echo.Context) error {
-	path := r.formatPath(c.Request().URL.Path)
-
-	found, route, _ := r.matchRoute(path)
-	if !found {
-		return c.HTML(404, "<p>Not found</p>")
-	}
-
-	content, err := r.executeRoute(c, route)
-	if err != nil {
-		return c.HTML(500, fmt.Sprintf("<p>%s</p>", err.Error()))
-	}
-
-	return c.HTML(200, *content)
-}
-
-func (r *Router) HandlePost(c echo.Context) error {
-	return nil
-}
-
 func (r *Router) Register(srv *echo.Echo) error {
 	err := r.scanPages("./routes")
 	if err != nil {
 		return err
 	}
 
-	srv.GET("*", r.HandleGet)
-	srv.POST("*", r.HandlePost)
+	handler := func(c echo.Context, route Route) error {
+		content, err := r.executeRoute(c, route)
+		if err != nil {
+			log.Println(err)
+			return c.HTML(500, fmt.Sprintf("<p>%s</p>", err.Error()))
+		}
+
+		return c.HTML(200, *content)
+	}
+
+	wsHandler := func(c echo.Context) error {
+		websocket.Handler(func(ws *websocket.Conn) {
+			defer ws.Close()
+			eventChan := r.eventBus.Subscribe("file_changed")
+
+			// Handle sending events
+			done := make(chan struct{})
+			go func() {
+				for {
+					select {
+					case _, ok := <-eventChan:
+						if !ok {
+							return // Channel closed, exit goroutine
+						}
+						err := websocket.Message.Send(ws, "reload")
+						if err != nil {
+							log.Println("WebSocket Send Error:", err)
+							close(done) // Signal to close
+							return
+						}
+						log.Println("Reloading web page...")
+					case <-done:
+						return
+					}
+				}
+			}()
+
+			// Block until WebSocket closes
+			buf := make([]byte, 1)
+			_, err := ws.Read(buf)
+			close(done) // Ensure goroutine exits
+			if err != nil {
+				log.Println("WebSocket Read Error:", err)
+			}
+		}).ServeHTTP(c.Response(), c.Request())
+
+		return nil
+	}
+
+	rootHandler := func(c echo.Context) error {
+		content, err := r.executeRoute(c, Route{
+			Path:     "/",
+			Template: "public/index.html",
+		})
+		if err != nil {
+			log.Println(err)
+			return c.HTML(500, fmt.Sprintf("<p>%s</p>", err.Error()))
+		}
+
+		return c.HTML(200, *content)
+	}
+
+	srv.GET("/", rootHandler)
+	srv.POST("/", rootHandler)
+
+	srv.GET("/_/ws/", wsHandler)
+
+	for _, route := range r.routes {
+		_handler := func(c echo.Context) error { return handler(c, route) }
+		srv.Group("_").GET(route.Path, _handler)
+		srv.Group("_").POST(route.Path, _handler)
+	}
+
+	srv.HTTPErrorHandler = func(err error, c echo.Context) {
+		if he, ok := err.(*echo.HTTPError); ok {
+			if he.Code == http.StatusNotFound {
+				c.Redirect(http.StatusMovedPermanently, "/")
+				return
+			}
+		}
+		// Default error handler
+		srv.DefaultHTTPErrorHandler(err, c)
+	}
 
 	return nil
 }
 
-func NewRouter(pageRegistry map[string]any) *Router {
+func NewRouter(pageRegistry map[string]any, eventBus *EventBus) *Router {
 	return &Router{
 		routes:       []Route{},
 		pageRegistry: pageRegistry,
+		eventBus:     eventBus,
 	}
 }

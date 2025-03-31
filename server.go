@@ -26,6 +26,7 @@ type Server struct {
 	srv      *echo.Echo
 	router   Router
 	registry Registry
+	eventBus *EventBus
 }
 
 func (s *Server) Start(port ...int) error {
@@ -83,6 +84,8 @@ func (s *Server) Watcher() {
 				if event.Has(fsnotify.Remove) {
 					log.Println("removed file:", event.Name)
 				}
+
+				s.eventBus.Publish("file_changed", "event")
 			case err, ok := <-watcher.Errors:
 				if !ok {
 					return
@@ -116,7 +119,8 @@ func NewServer(pageRegistry map[string]any) *Server {
 
 	srv.Use(middleware.Static(JoinURL(lo.Must(os.Getwd()), "public")))
 
-	router := NewRouter(pageRegistry)
+	eventBus := NewEventBus()
+	router := NewRouter(pageRegistry, eventBus)
 	registry := NewRegistry(
 		".",
 		JoinURL(lo.Must(os.Getwd()),
@@ -128,5 +132,6 @@ func NewServer(pageRegistry map[string]any) *Server {
 		srv:      srv,
 		router:   *router,
 		registry: *registry,
+		eventBus: eventBus,
 	}
 }

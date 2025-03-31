@@ -12,6 +12,6 @@ type payload struct {
 func (Page) Load(c echo.Context) (any, error) {
 	return &payload{
 		Title:  "Gelt is amazing!",
-		Stacks: []string{"Go", "Echo", "HTML"},
+		Stacks: []string{"Golang", "HTML", "CSS", "AlpineJS"},
 	}, nil
 }

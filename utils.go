@@ -137,3 +137,11 @@ func GetGoModuleName(dir string) (string, error) {
 
 	return "", fmt.Errorf("module name not found in go.mod")
 }
+
+func ToJSON(data any) string {
+	b, err := json.Marshal(data)
+	if err != nil {
+		return "{}" // Return empty JSON object on error
+	}
+	return string(b)
+}
