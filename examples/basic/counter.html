@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+    <script src="//unpkg.com/alpinejs" defer></script>
+  </head>
+  <body>
+    <div x-data="{ count: 0 }">
+      <h1 x-text="'Count: ' + count"></h1>
+      <button @click="increment">Increment</button>
+      <template x-if="!(count > 10)">
+        <span>Count was over clicked</span>
+      </template>
+      <span>Skip to the good part.</span>
+    </div>
+
+    <script>
+      function increment() {
+        this.count++;
+      }
+    </script>
+  </body>
+</html>

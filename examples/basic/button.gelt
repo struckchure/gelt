@@ -1,0 +1,11 @@
+<script>
+  export let props = $props();
+</script>
+
+<style>
+  button {
+    background: skyblue;
+  }
+</style>
+
+<button x-text="props."></button>

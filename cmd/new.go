@@ -10,7 +10,6 @@ import (
 	"github.com/fatih/color"
 	cp "github.com/otiai10/copy"
 	"github.com/spf13/cobra"
-	"github.com/struckchure/gelt"
 )
 
 var qs = []*survey.Question{
@@ -20,18 +19,8 @@ var qs = []*survey.Question{
 		Transform: survey.ToLower,
 	},
 	{
-		Name: "package_name",
-		Prompt: &survey.Input{
-			Message: "Package Name:",
-			Default: (func() string {
-				pkgName, err := gelt.GetGoModuleName(".")
-				if err != nil {
-					return ""
-				}
-
-				return pkgName
-			})(),
-		},
+		Name:     "package_name",
+		Prompt:   &survey.Input{Message: "Package Name:"},
 		Validate: survey.Required,
 	},
 }

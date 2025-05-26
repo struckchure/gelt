@@ -1,0 +1,11 @@
+<script>
+  import TodoItem from "./todo-item";
+</script>
+
+<div x-data="{ posts: ['Uninstall NodeJs', 'Publish Gelt v0.0.0'] }">
+  <h2>Blog</h2>
+
+  <template x-for="item in items">
+    <li x-text="item"></li>
+  </template>
+</div>

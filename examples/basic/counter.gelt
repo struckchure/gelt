@@ -1,0 +1,23 @@
+<script>
+  export let props = $props();
+
+  function increment() {
+    this.count++;
+  }
+</script>
+
+<style>
+  button {
+    background: skyblue;
+  }
+</style>
+
+<div x-data="{count: 0}">
+  <h1 x-text="'Count: ' + count"></h1>
+  <button @click="increment">Increment</button>
+
+  <span x-if="count > 10">Count was over clicked</span>
+  <span x-if="count < 10">Count was not over clicked</span>
+
+  <span>Skip to the good part.</span>
+</div>
